@@ -1,20 +1,20 @@
-use axum::{response::{Json}, http::StatusCode, extract};
+use axum::{response::Json, http::StatusCode, extract::{self, State}};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::db::get_pool;
+use crate::AppState;
 
-pub async fn get_user(params: extract::Path<String>) -> Result<Json<Value>, StatusCode> {
-    let user_email = params.0;
-    let pool = get_pool().await;
+pub async fn get_user(State(state): State<AppState>, params: extract::Path<String>) -> Result<Json<Value>, StatusCode> {
+    let user_id = params.0;
 
-    let user = sqlx::query!("SELECT * FROM users WHERE email = ?", user_email)
-        .fetch_one(pool)
+    let user = sqlx::query!("SELECT * FROM users WHERE id = ?", user_id)
+        .fetch_one(&state.db_pool)
         .await
         .ok();
 
     match user {
         Some(user) => Ok(Json(json!({
+            "id": user.id,
             "name": user.name,
             "email": user.email,
         }))),
@@ -29,21 +29,23 @@ pub struct CreateUserRequest {
     pub password: String,
 }
 
-pub async fn add_user(Json(payload): Json<CreateUserRequest>) -> Result<Json<Value>, StatusCode> {
-    let pool = get_pool().await;
+pub async fn add_user(State(state): State<AppState>, Json(payload): Json<CreateUserRequest>) -> Result<Json<Value>, StatusCode> {
+    let id = uuid::Uuid::new_v4().to_string();
 
     let user = sqlx::query!(
-        "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
+        "INSERT INTO users (id, name, email, password) VALUES (?, ?, ?, ?)",
+        id,
         payload.name,
         payload.email,
         payload.password
     )
-    .execute(pool)
+    .execute(&state.db_pool)
     .await
     .ok();
 
     match user {
         Some(_) => Ok(Json(json!({
+            "id": id,
             "name": payload.name,
             "email": payload.email,
         }))),
